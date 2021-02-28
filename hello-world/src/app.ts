@@ -3,153 +3,180 @@
  * Licensed under the MIT License.
  */
 
-import * as MRE from '@microsoft/mixed-reality-extension-sdk';
+import {
+    Actor,
+    AnimationKeyframe,
+    AnimationWrapMode,
+    ButtonBehavior,
+    Context,
+    Quaternion,
+    TextAnchorLocation,
+    Vector3
+} from '@microsoft/mixed-reality-extension-sdk';
 
 /**
  * The main class of this app. All the logic goes here.
  */
 export default class HelloWorld {
-	private text: MRE.Actor = null;
-	private cube: MRE.Actor = null;
-	private assets: MRE.AssetContainer;
+    private text: Actor = null;
+    private cube: Actor = null;
 
-	constructor(private context: MRE.Context) {
-		this.context.onStarted(() => this.started());
-	}
+    constructor(private context: Context, private baseUrl: string) {
+        this.context.onStarted(() => this.started());
+    }
 
-	/**
-	 * Once the context is "started", initialize the app.
-	 */
-	private async started() {
-		// set up somewhere to store loaded assets (meshes, textures, animations, gltfs, etc.)
-		this.assets = new MRE.AssetContainer(this.context);
+    /**
+     * Once the context is "started", initialize the app.
+     */
+    private started() {
 
-		// Create a new actor with no mesh, but some text.
-		this.text = MRE.Actor.Create(this.context, {
-			actor: {
-				name: 'Text',
-				transform: {
-					app: { position: { x: 0, y: 0.5, z: 0 } }
-				},
-				text: {
-					contents: "¡SPANISH IMMERSIVE!",
-					anchor: MRE.TextAnchorLocation.MiddleCenter,
-					color: { r: 255 / 255, g: 195 / 255, b: 0 / 255 },
-					height: 0.3
-				}
-			}
-		});
+        // Create a new actor with no mesh, but some text. This operation is asynchronous, so
+        // it returns a "forward" promise (a special promise, as we'll see later).
+        const textPromise = Actor.CreateEmpty(this.context, {
+            actor: {
+                name: 'Text',
+                transform: {
+                    position: { x: 0, y: 0.5, z: 0 }
+                },
+                text: {
+                    contents: "Tom's da Man!",
+                    anchor: TextAnchorLocation.MiddleCenter,
+                    color: { r: 30 / 255, g: 206 / 255, b: 213 / 255 },
+                    height: 0.3
+                }
+            }
+        });
 
-		// Here we create an animation for our text actor. First we create animation data, which can be used on any
-		// actor. We'll reference that actor with the placeholder "text".
-		const spinAnimData = this.assets.createAnimationData(
-			// The name is a unique identifier for this data. You can use it to find the data in the asset container,
-			// but it's merely descriptive in this sample.
-			"Spin",
-			{
-				// Animation data is defined by a list of animation "tracks": a particular property you want to change,
-				// and the values you want to change it to.
-				tracks: [{
-					// This animation targets the rotation of an actor named "text"
-					target: MRE.ActorPath("text").transform.local.rotation,
-					// And the rotation will be set to spin over 20 seconds
-					keyframes: this.generateSpinKeyframes(20, MRE.Vector3.Up()),
-					// And it will move smoothly from one frame to the next
-					easing: MRE.AnimationEaseCurves.Linear
-				}]
-			});
-		// Once the animation data is created, we can create a real animation from it.
-		spinAnimData.bind(
-			// We assign our text actor to the actor placeholder "text"
-			{ text: this.text },
-			// And set it to play immediately, and bounce back and forth from start to end
-			{ isPlaying: true, wrapMode: MRE.AnimationWrapMode.PingPong });
+        // Even though the actor is not yet created in Altspace (because we didn't wait for the promise),
+        // we can still get a reference to it by grabbing the `value` field from the forward promise.
+        this.text = textPromise.value;
 
-		// Load a glTF model before we use it
-		const cubeData = await this.assets.loadGltf('altspace-cube.glb', "box");
+        // Here we create an animation on our text actor. Animations have three mandatory arguments:
+        // a name, an array of keyframes, and an array of events.
+        this.text.createAnimation({
+            // The name is a unique identifier for this animation. We'll pass it to "startAnimation" later.
+            animationName: "Spin",
+            // Keyframes define the timeline for the animation: where the actor should be, and when.
+            // We're calling the generateSpinKeyframes function to produce a simple 20-second revolution.
+            keyframes: this.generateSpinKeyframes(20, Vector3.Up()),
+            // Events are points of interest during the animation. The animating actor will emit a given
+            // named event at the given timestamp with a given string value as an argument.
+            events: [],
 
-		// spawn a copy of the glTF model
-		this.cube = MRE.Actor.CreateFromPrefab(this.context, {
-			// using the data we loaded earlier
-			firstPrefabFrom: cubeData,
-			// Also apply the following generic actor properties.
-			actor: {
-				name: 'SPAIM Cube',
-				// Parent the glTF model to the text actor, so the transform is relative to the text
-				parentId: this.text.id,
-				transform: {
-					local: {
-						position: { x: 0, y: -1, z: 0 },
-						scale: { x: 0.4, y: 0.4, z: 0.4 }
-					}
-				}
-			}
-		});
+            // Optionally, we also repeat the animation infinitely.
+            wrapMode: AnimationWrapMode.Loop
+        })
+            .catch(reason => this.context.logger.log('error', `Failed to create spin animation: ${reason}`));
 
-		// Create some animations on the cube.
-		const flipAnimData = this.assets.createAnimationData(
-			// the animation name
-			"DoAFlip",
-			{ tracks: [{
-				// applies to the rotation of an unknown actor we'll refer to as "target"
-				target: MRE.ActorPath("target").transform.local.rotation,
-				// do a spin around the X axis over the course of one second
-				keyframes: this.generateSpinKeyframes(1.0, MRE.Vector3.Right()),
-				// and do it smoothly
-				easing: MRE.AnimationEaseCurves.Linear
-			}]}
-		);
-		// apply the animation to our cube
-		const flipAnim = await flipAnimData.bind({ target: this.cube });
+        // Load a glTF model
+        const cubePromise = Actor.CreateFromGLTF(this.context, {
+            // at the given URL
+            resourceUrl: `${this.baseUrl}/altspace-cube.glb`,
+            // and spawn box colliders around the meshes.
+            colliderType: 'box',
+            // Also apply the following generic actor properties.
+            actor: {
+                name: 'Altspace Cube',
+                // Parent the glTF model to the text actor.
+                parentId: this.text.id,
+                transform: {
+                    position: { x: 0, y: -1, z: 0 },
+                    scale: { x: 0.4, y: 0.4, z: 0.4 }
+                }
+            }
+        });
 
-		// Set up cursor interaction. We add the input behavior ButtonBehavior to the cube.
-		// Button behaviors have two pairs of events: hover start/stop, and click start/stop.
-		const buttonBehavior = this.cube.setBehavior(MRE.ButtonBehavior);
+        // Grab that early reference again.
+        this.cube = cubePromise.value;
 
-		// Trigger the grow/shrink animations on hover.
-		buttonBehavior.onHover('enter', () => {
-			// use the convenience function "AnimateTo" instead of creating the animation data in advance
-			MRE.Animation.AnimateTo(this.context, this.cube, {
-				destination: { transform: { local: { scale: { x: 0.5, y: 0.5, z: 0.5 } } } },
-				duration: 0.3,
-				easing: MRE.AnimationEaseCurves.EaseOutSine
-			});
-		});
-		buttonBehavior.onHover('exit', () => {
-			MRE.Animation.AnimateTo(this.context, this.cube, {
-				destination: { transform: { local: { scale: { x: 0.4, y: 0.4, z: 0.4 } } } },
-				duration: 0.3,
-				easing: MRE.AnimationEaseCurves.EaseOutSine
-			});
-		});
+        // Create some animations on the cube.
+        this.cube.createAnimation({
+            animationName: 'GrowIn',
+            keyframes: this.growAnimationData,
+            events: []
+        })
+            .catch(reason => this.context.logger.log('error', `Failed to create grow animation: ${reason}`));
 
-		// When clicked, do a 360 sideways.
-		buttonBehavior.onClick(_ => {
-			flipAnim.play();
-		});
-	}
+        this.cube.createAnimation({
+            animationName: 'ShrinkOut',
+            keyframes: this.shrinkAnimationData,
+            events: []
+        })
+            .catch(reason => this.context.logger.log('error', `Failed to create shrink animation: ${reason}`));
 
-	/**
-	 * Generate keyframe data for a simple spin animation.
-	 * @param duration The length of time in seconds it takes to complete a full revolution.
-	 * @param axis The axis of rotation in local space.
-	 */
-	private generateSpinKeyframes(duration: number, axis: MRE.Vector3): Array<MRE.Keyframe<MRE.Quaternion>> {
-		return [{
-			time: 0 * duration,
-			value: MRE.Quaternion.RotationAxis(axis, 0)
-		}, {
-			time: 0.25 * duration,
-			value: MRE.Quaternion.RotationAxis(axis, Math.PI / 2)
-		}, {
-			time: 0.5 * duration,
-			value: MRE.Quaternion.RotationAxis(axis, Math.PI)
-		}, {
-			time: 0.75 * duration,
-			value: MRE.Quaternion.RotationAxis(axis, 3 * Math.PI / 2)
-		}, {
-			time: 1 * duration,
-			value: MRE.Quaternion.RotationAxis(axis, 2 * Math.PI)
-		}];
-	}
+        this.cube.createAnimation({
+            animationName: 'DoAFlip',
+            keyframes: this.generateSpinKeyframes(1.0, Vector3.Right()),
+            events: []
+        })
+            .catch(reason => this.context.logger.log('error', `Failed to create flip animation: ${reason}`));
+
+        // Now that the text and its animation are all being set up, we can start playing
+        // the animation.
+        this.text.startAnimation('Spin');
+
+        // Set up cursor interaction. We add the input behavior ButtonBehavior to the cube.
+        // Button behaviors have two pairs of events: hover start/stop, and click start/stop.
+        const buttonBehavior = this.cube.setBehavior(ButtonBehavior);
+
+        // Trigger the grow/shrink animations on hover.
+        buttonBehavior.onHover('enter', (userId: string) => {
+            this.cube.startAnimation('GrowIn');
+        }
+        );
+        buttonBehavior.onHover('exit', (userId: string) => {
+            this.cube.startAnimation('ShrinkOut');
+        }
+        );
+
+        // When clicked, do a 360 sideways.
+        buttonBehavior.onClick('pressed', (userId: string) => {
+            this.cube.startAnimation('DoAFlip');
+        }
+        );
+
+    }
+
+    /**
+     * Generate keyframe data for a simple spin animation.
+     * @param duration The length of time in seconds it takes to complete a full revolution.
+     * @param axis The axis of rotation in local space.
+     */
+    private generateSpinKeyframes(duration: number, axis: Vector3): AnimationKeyframe[] {
+        return [{
+            time: 0 * duration,
+            value: { transform: { rotation: Quaternion.RotationAxis(axis, 0) } }
+        }, {
+            time: 0.25 * duration,
+            value: { transform: { rotation: Quaternion.RotationAxis(axis, Math.PI / 2) } }
+        }, {
+            time: 0.5 * duration,
+            value: { transform: { rotation: Quaternion.RotationAxis(axis, Math.PI) } }
+        }, {
+            time: 0.75 * duration,
+            value: { transform: { rotation: Quaternion.RotationAxis(axis, 3 * Math.PI / 2) } }
+        }, {
+            time: 1 * duration,
+            value: { transform: { rotation: Quaternion.RotationAxis(axis, 2 * Math.PI) } }
+        }, {
+            time: 2 * duration,
+            value: { transform: { rotation: Quaternion.RotationAxis(axis, 2 * Math.PI) } }
+        }];
+    }
+
+    private growAnimationData: AnimationKeyframe[] = [{
+        time: 0,
+        value: { transform: { scale: { x: 0.4, y: 0.4, z: 0.4 } } }
+    }, {
+        time: 0.3,
+        value: { transform: { scale: { x: 0.5, y: 0.5, z: 0.5 } } }
+    }];
+
+    private shrinkAnimationData: AnimationKeyframe[] = [{
+        time: 0,
+        value: { transform: { scale: { x: 0.5, y: 0.5, z: 0.5 } } }
+    }, {
+        time: 0.3,
+        value: { transform: { scale: { x: 0.4, y: 0.4, z: 0.4 } } }
+    }];
 }
