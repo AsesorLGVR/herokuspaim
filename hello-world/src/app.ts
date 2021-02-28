@@ -61,7 +61,7 @@ export default class HelloWorld {
             keyframes: this.generateSpinKeyframes(20, Vector3.Up()),
             // Events are points of interest during the animation. The animating actor will emit a given
             // named event at the given timestamp with a given string value as an argument.
-            events: [Linear],
+            events: [],
 
             // Optionally, we also repeat the animation infinitely.
             wrapMode: AnimationWrapMode.Loop
