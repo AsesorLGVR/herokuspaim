@@ -39,9 +39,9 @@ export default class HelloWorld {
                     position: { x: 0, y: 0.5, z: 0 }
                 },
                 text: {
-                    contents: "Tom's da Man!",
+                    contents: "SPANISH IMMERSIVE!",
                     anchor: TextAnchorLocation.MiddleCenter,
-                    color: { r: 30 / 255, g: 206 / 255, b: 213 / 255 },
+                    color: { r: 255 / 255, g: 199 / 255, b: 0 / 255 },
                     height: 0.3
                 }
             }
